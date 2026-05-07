@@ -3,10 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Mon PEA v3.3</title>
+<title>Mon PEA v3.4.1</title>
 <meta name="theme-color" content="#0c0c10">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<link rel="manifest" href="manifest.json">
+<link rel="stylesheet" href="fonts.css">
+<script src="chart.umd.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -72,6 +73,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;displ
 .nav-btn.n3.active{background:linear-gradient(135deg,#9d7dff,#e879f9);box-shadow:0 4px 14px rgba(157,125,255,.3)}
 .nav-btn.n4.active{background:linear-gradient(135deg,#00d4ff,#4d9eff);box-shadow:0 4px 14px rgba(0,212,255,.3)}
 .nav-btn.n5.active{background:linear-gradient(135deg,#00e07a,#00d4ff);box-shadow:0 4px 14px rgba(0,224,122,.3)}
+.nav-btn.n6.active{background:linear-gradient(135deg,#ff7c5a,#ffb830);box-shadow:0 4px 14px rgba(255,124,90,.3)}
 
 /* ── SCROLL ARROWS ── */
 .scroll-wrap{position:relative;flex-shrink:0}
@@ -249,7 +251,7 @@ canvas{display:block;width:100%!important}
 <!-- TOP BAR -->
 <div class="topbar">
   <div class="live-dot" id="live-dot"></div>
-  <div class="app-title">Mon PEA <span class="app-version">v3.3</span></div>
+  <div class="app-title">Mon PEA <span class="app-version">v3.4.1</span></div>
   <div class="topbar-right">
     <div class="topbar-price" id="topbar-price" style="display:none">
       <div class="tp-val" id="tp-val">—</div>
@@ -283,6 +285,7 @@ canvas{display:block;width:100%!important}
     <button class="nav-btn n3" onclick="goTab(3,this)">🔮 Simulateur</button>
     <button class="nav-btn n4" onclick="goTab(4,this)">🎯 Objectif</button>
     <button class="nav-btn n5" onclick="goTab(5,this)">🤖 Assistant</button>
+    <button class="nav-btn n6" onclick="goTab(6,this)">🏖️ Retraite</button>
   </div>
   <button class="scroll-arrow scroll-arrow-r nav-arrow" onclick="scrollH('nav-bar',1)" id="nav-arrow-r">›</button>
 </div>
@@ -797,6 +800,7 @@ function render(){
       case 3: html=renderSim(); break;
       case 4: html=renderGoal(); break;
       case 5: html=renderAssistant(); break;
+      case 6: html=renderRetirement(); break;
     }
   }
   document.getElementById('content-area').innerHTML=html;
@@ -806,6 +810,7 @@ function render(){
     switch(currentTab){
       case 1: postRenderChart(ca); break;
       case 3: postRenderSim(); break;
+      case 6: postRenderRet(); break;
     }
   }
 }
@@ -1867,6 +1872,207 @@ function checkMonthlyReminder(){
 }
 
 // ════════════════════════════════════════
+// CALCULATEUR DE RETRAITE
+// ════════════════════════════════════════
+var retirementParams = {age:30, retireAge:65, monthly:50, rate:0.07, drawYears:25};
+function loadRetirementParams(){
+  try{var s=localStorage.getItem('pea-retirement');if(s)retirementParams=Object.assign(retirementParams,JSON.parse(s));}catch(e){}
+}
+function saveRetirementParams(){
+  try{localStorage.setItem('pea-retirement',JSON.stringify(retirementParams));}catch(e){}
+}
+loadRetirementParams();
+
+function renderRetirement(){
+  var p=retirementParams;
+  var yearsToRetire=Math.max(1,p.retireAge-p.age);
+  var html='';
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5;padding:0 2px;">🏖️ <strong style="color:var(--text)">Calculateur retraite</strong> — combien tu auras à la retraite et combien ça représente en revenu mensuel.</div>';
+
+  // Inputs
+  html+='<div class="card"><div class="card-hd">Tes paramètres</div>';
+  html+='<div class="form-grid">';
+  html+='<div class="form-field"><label>Âge actuel</label><input type="number" id="r-age" value="'+p.age+'" min="18" max="90" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updRet()"></div>';
+  html+='<div class="form-field"><label>Âge de retraite</label><input type="number" id="r-retire" value="'+p.retireAge+'" min="40" max="90" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updRet()"></div>';
+  html+='<div class="form-field"><label>Versement/mois (€)</label><input type="number" id="r-monthly" value="'+p.monthly+'" min="1" step="10" style="font-size:18px;font-weight:700;text-align:center;padding:12px;" oninput="updRet()"></div>';
+  html+='<div class="form-field"><label>Durée retraite</label><input type="number" id="r-draw" value="'+p.drawYears+'" min="5" max="40" style="font-size:18px;font-weight:700;text-align:center;padding:12px;" oninput="updRet()"></div>';
+  html+='</div></div>';
+
+  // Scenarios
+  html+='<div class="card"><div class="card-hd">Rendement annuel estimé</div>';
+  html+='<div class="scen-row">';
+  ['0.04','0.06','0.07','0.09'].forEach(function(r){
+    var lbls={'0.04':'🐢 4%<br><span style="font-size:9px;opacity:.6">Prudent</span>','0.06':'🐢 6%<br><span style="font-size:9px;opacity:.6">Modéré</span>','0.07':'⚖️ 7%<br><span style="font-size:9px;opacity:.6">Historique</span>','0.09':'🚀 9%<br><span style="font-size:9px;opacity:.6">Optimiste</span>'};
+    html+='<button class="scen-btn'+(p.rate==parseFloat(r)?' active':'')+'" data-rr="'+r+'" onclick="pickRetScen(this)">'+lbls[r]+'</button>';
+  });
+  html+='</div></div>';
+
+  // Already invested seed
+  var st = curAsset() ? assetStats(curAsset()) : {curV:0,totI:0};
+  var allInv = assets.reduce(function(s,a){return s+assetStats(a).totI;},0);
+  var allCurV = assets.reduce(function(s,a){return s+assetStats(a).curV;},0);
+
+  // Calc final capital with current portfolio
+  var capWithCurrent = compoundFutureValue(allCurV, p.monthly, yearsToRetire, p.rate);
+  var totalInvested = allInv + p.monthly*12*yearsToRetire;
+  var gain = capWithCurrent - totalInvested;
+
+  // Monthly draw at retirement (4% rule + duration)
+  var monthlyDraw = capWithCurrent * (p.rate/12) / (1 - Math.pow(1+p.rate/12, -p.drawYears*12));
+  var taxAdjMonthly = monthlyDraw * (1 - 0.172); // PEA after 5y
+  var draw4pct = capWithCurrent * 0.04 / 12; // règle des 4%
+
+  html+='<div class="card"><div class="card-hd">À l\'âge de '+p.retireAge+' ans</div>';
+  html+='<div style="background:linear-gradient(135deg,rgba(255,124,90,0.1),rgba(255,184,48,0.1));border:1px solid rgba(255,184,48,0.3);border-radius:var(--r2);padding:18px;margin-bottom:12px;text-align:center;">';
+  html+='<div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin-bottom:6px;">Ton capital total estimé</div>';
+  html+='<div style="font-family:JetBrains Mono,monospace;font-size:38px;font-weight:900;color:var(--gold);letter-spacing:-1px;line-height:1;">'+fmtK(capWithCurrent)+'</div>';
+  html+='<div style="font-size:11px;color:var(--text3);margin-top:6px;">soit '+fE(capWithCurrent,0)+'</div>';
+  html+='</div>';
+
+  html+='<div class="grid2" style="margin-bottom:10px;">';
+  html+='<div class="mini-card"><div class="mc-l">Tu auras versé</div><div class="mc-v">'+fmtK(totalInvested)+'</div><div class="mc-sub">'+yearsToRetire+' ans × 12 × '+p.monthly+'€'+(allCurV>0?' + déjà '+fmtK(allCurV):'')+'</div></div>';
+  html+='<div class="mini-card bc-green"><div class="mc-l g">Gains du marché</div><div class="mc-v" style="color:var(--green)">+'+fmtK(gain)+'</div><div class="mc-sub">'+(totalInvested>0?(gain/totalInvested*100).toFixed(0)+'% de bonus':'')+'</div></div>';
+  html+='</div></div>';
+
+  // Revenu mensuel
+  html+='<div class="card"><div class="card-hd">💸 Revenu mensuel possible</div>';
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;">Combien tu peux retirer chaque mois pendant '+p.drawYears+' ans avant épuisement du capital :</div>';
+  html+='<div style="background:var(--gdim);border:1px solid var(--gborder);border-radius:var(--r2);padding:16px;text-align:center;margin-bottom:10px;">';
+  html+='<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--green);margin-bottom:4px;">Revenu net mensuel (après PEA 17,2%)</div>';
+  html+='<div style="font-family:JetBrains Mono,monospace;font-size:32px;font-weight:900;color:var(--green);letter-spacing:-1px;">'+fE(taxAdjMonthly,0)+'</div>';
+  html+='<div style="font-size:11px;color:var(--text3);margin-top:4px;">soit '+fE(taxAdjMonthly*12,0)+' / an</div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">';
+  html+='<div style="background:var(--s2);border-radius:var(--r3);padding:10px;"><div style="color:var(--text3);margin-bottom:3px;">Brut mensuel</div><div class="mono" style="font-weight:700;font-size:14px;">'+fE(monthlyDraw,0)+'</div></div>';
+  html+='<div style="background:var(--s2);border-radius:var(--r3);padding:10px;"><div style="color:var(--text3);margin-bottom:3px;">Règle des 4%</div><div class="mono" style="font-weight:700;font-size:14px;">'+fE(draw4pct,0)+'/mois</div></div>';
+  html+='</div>';
+  html+='<div style="font-size:10px;color:var(--text3);margin-top:10px;line-height:1.5;">💡 La <strong>règle des 4%</strong> (Trinity Study) permet un retrait illimité dans le temps en moyenne. Ton calcul personnalisé prévoit '+p.drawYears+' ans de retrait.</div>';
+  html+='</div>';
+
+  // Comparaison niveau de vie
+  html+='<div class="card"><div class="card-hd">📊 Ce que ça représente</div>';
+  var smic=1426; // SMIC net 2026 estimé
+  var pctSmic=(taxAdjMonthly/smic*100);
+  var avgPension=1500; // pension moyenne France
+  var pctPension=(taxAdjMonthly/avgPension*100);
+
+  html+='<div style="display:flex;flex-direction:column;gap:8px;">';
+  html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">vs SMIC net (~'+fE(smic,0)+')</span><strong style="color:'+(pctSmic>=100?'var(--green)':'var(--gold)')+'">'+pctSmic.toFixed(0)+'%</strong></div></div>';
+  html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">vs retraite moyenne (~'+fE(avgPension,0)+')</span><strong style="color:'+(pctPension>=100?'var(--green)':'var(--gold)')+'">'+pctPension.toFixed(0)+'%</strong></div></div>';
+
+  // Ce que ça permet de payer
+  var things=[
+    {emoji:'🏠',label:'Loyer/Crédit',cost:800},
+    {emoji:'🛒',label:'Courses mensuelles',cost:400},
+    {emoji:'🚗',label:'Voiture (essence+assurance)',cost:200},
+    {emoji:'💡',label:'Énergie + Internet',cost:150},
+    {emoji:'🏝️',label:'Vacances/loisirs',cost:300}
+  ];
+  var totalNeeds=things.reduce(function(s,t){return s+t.cost;},0);
+  var diff=taxAdjMonthly-totalNeeds;
+  things.forEach(function(t){
+    var ok=taxAdjMonthly>=t.cost;
+    html+='<div class="mini-card" style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span>'+t.emoji+' '+t.label+'</span><span style="color:'+(ok?'var(--green)':'var(--text3)')+';font-weight:700;">'+fE(t.cost,0)+(ok?' ✓':' ✗')+'</span></div>';
+  });
+  html+='<div style="background:'+(diff>=0?'var(--gdim)':'var(--rdim)')+';border:1px solid '+(diff>=0?'var(--gborder)':'var(--rborder)')+';border-radius:var(--r3);padding:12px;text-align:center;margin-top:6px;">';
+  html+='<div style="font-size:11px;color:var(--text3);margin-bottom:3px;">Total dépenses estimées : '+fE(totalNeeds,0)+'/mois</div>';
+  html+='<div style="font-family:JetBrains Mono,monospace;font-size:16px;font-weight:800;color:'+(diff>=0?'var(--green)':'var(--red)')+';">'+(diff>=0?'+ ':'')+fE(diff,0)+(diff>=0?' restants pour épargner / loisirs':' à compenser avec autre source')+'</div>';
+  html+='</div>';
+  html+='</div></div>';
+
+  // Graph projection
+  html+='<div class="card"><div class="card-hd">📈 Évolution jusqu\'à '+p.retireAge+' ans</div>';
+  html+='<div style="height:200px;background:var(--s2);border-radius:var(--r3);padding:8px;"><canvas id="ret-chart"></canvas></div></div>';
+
+  // Conseils selon situation
+  html+='<div class="card"><div class="card-hd">💡 Pistes pour aller plus loin</div>';
+  var advices=[];
+  if(p.monthly<100) advices.push({c:'var(--gold)',i:'📈',t:'Augmente progressivement',d:'Avec '+p.monthly+'€/mois c\'est un bon début. Vise 100-200€/mois si tu peux. Chaque tranche supplémentaire fait une grosse différence sur 30 ans.'});
+  if(p.monthly>=100&&p.monthly<300) advices.push({c:'var(--blue)',i:'🌍',t:'Diversifie',d:'À ce niveau, tu peux ajouter un ETF Émergents (PAEEM) à 20-30% pour plus de diversification.'});
+  if(yearsToRetire<10) advices.push({c:'var(--red)',i:'⚠️',t:'Horizon court',d:'Moins de 10 ans avant la retraite : sécurise progressivement en transférant une partie vers fonds euros / livret A pour limiter le risque.'});
+  if(yearsToRetire>=20) advices.push({c:'var(--green)',i:'🚀',t:'Horizon long = ton avantage',d:'Tu as plus de 20 ans devant toi. Reste en actions monde, ne touche à rien. Le temps est ton allié grâce aux intérêts composés.'});
+  if(taxAdjMonthly<800) advices.push({c:'var(--gold)',i:'💰',t:'Pense aux autres revenus',d:'Ton capital seul ne suffira pas. Pense aussi à la retraite Sécu, immobilier locatif, ou augmenter tes versements PEA.'});
+  if(taxAdjMonthly>=2500) advices.push({c:'var(--green)',i:'🎉',t:'Belle trajectoire !',d:'Avec ce niveau de revenu projeté, tu es bien parti. Continue ta régularité et ne touche pas aux baisses de marché.'});
+
+  if(advices.length===0) advices.push({c:'var(--blue)',i:'✅',t:'Tu es sur la bonne voie',d:'Continue ton DCA mensuel. La régularité sur la durée bat tous les market timing.'});
+
+  advices.forEach(function(a){
+    html+='<div style="background:var(--s2);border-left:3px solid '+a.c+';border-radius:var(--r3);padding:11px 13px;margin-bottom:8px;">';
+    html+='<div style="font-size:13px;font-weight:700;margin-bottom:4px;">'+a.i+' '+a.t+'</div>';
+    html+='<div style="font-size:11px;color:var(--text2);line-height:1.5;">'+a.d+'</div></div>';
+  });
+  html+='</div>';
+
+  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:8px;line-height:1.6;">Projections indicatives. Inflation non prise en compte. Risque de perte en capital.</div>';
+  return html;
+}
+
+// Pas d'apport initial = annuity future value
+// Avec apport initial = annuity FV + compound growth of initial
+function compoundFutureValue(initial, monthly, years, rate){
+  var n=years*12, r=rate/12;
+  var fvInitial = initial * Math.pow(1+r, n);
+  var fvAnnuity = monthly * ((Math.pow(1+r,n)-1)/r);
+  return fvInitial + fvAnnuity;
+}
+
+function pickRetScen(btn){
+  retirementParams.rate=parseFloat(btn.dataset.rr);
+  saveRetirementParams();
+  document.querySelectorAll('[data-rr]').forEach(function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  updRet();
+}
+
+function updRet(){
+  var fields=['age','retire','monthly','draw'];
+  var keys=['age','retireAge','monthly','drawYears'];
+  fields.forEach(function(f,i){
+    var el=document.getElementById('r-'+f);
+    if(el){var v=parseFloat(el.value);if(!isNaN(v))retirementParams[keys[i]]=v;}
+  });
+  saveRetirementParams();
+  // Re-render this tab only
+  document.getElementById('content-area').innerHTML=renderRetirement();
+  postRenderRet();
+}
+
+function postRenderRet(){
+  // Draw projection chart
+  var p=retirementParams;
+  var years=Math.max(1,p.retireAge-p.age);
+  var allCurV=assets.reduce(function(s,a){return s+assetStats(a).curV;},0);
+  var allInv=assets.reduce(function(s,a){return s+assetStats(a).totI;},0);
+  var capData=[],invData=[],lbls=[];
+  for(var y=0;y<=years;y++){
+    var cap=compoundFutureValue(allCurV, p.monthly, y, p.rate);
+    var inv=allInv + p.monthly*12*y;
+    capData.push(parseFloat(cap.toFixed(2)));
+    invData.push(parseFloat(inv.toFixed(2)));
+    lbls.push((p.age+y)+' ans');
+  }
+  var cv=document.getElementById('ret-chart');
+  if(!cv) return;
+  cv.height=180;
+  if(chartInsts['ret']) chartInsts['ret'].destroy();
+  var ctx=cv.getContext('2d');
+  chartInsts['ret']=new Chart(ctx,{
+    type:'line',
+    data:{labels:lbls,datasets:[
+      {label:'Capital',data:capData,borderColor:'#ffb830',borderWidth:2,fill:true,
+       backgroundColor:(function(){var g=ctx.createLinearGradient(0,0,0,180);g.addColorStop(0,'rgba(255,184,48,0.25)');g.addColorStop(1,'rgba(255,184,48,0)');return g;})(),
+       pointRadius:0,tension:0.4},
+      {label:'Versé',data:invData,borderColor:'rgba(255,255,255,0.18)',borderWidth:1.5,fill:false,pointRadius:0,borderDash:[4,3]}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+fE(c.parsed.y,0);}}}},
+      scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#484860',font:{size:10},maxTicksLimit:8}},
+              y:{position:'right',grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#484860',font:{size:10,family:'JetBrains Mono'},callback:function(v){return fmtK(v);}}}}
+    }
+  });
+}
+
+// ════════════════════════════════════════
 // EXPORT / IMPORT
 // ════════════════════════════════════════
 function exportAll(){
@@ -1959,6 +2165,38 @@ setInterval(function(){
 
 // Check monthly reminder once per hour
 setInterval(checkMonthlyReminder, 3600000);
+</script>
+
+<script>
+// ═══ Service Worker registration ═══
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js')
+      .then(function(reg) {
+        console.log('[App] SW registered, scope:', reg.scope);
+        // Try to enable periodic background sync (Chrome only)
+        if ('periodicSync' in reg) {
+          navigator.permissions.query({name: 'periodic-background-sync'}).then(function(p) {
+            if (p.state === 'granted') {
+              reg.periodicSync.register('monthly-dca-check', {
+                minInterval: 24 * 60 * 60 * 1000 // 1 jour
+              }).catch(function(){});
+            }
+          }).catch(function(){});
+        }
+      })
+      .catch(function(err) {
+        console.warn('[App] SW registration failed:', err);
+      });
+  });
+}
+
+// Helper to send messages to SW
+function notifySW(action, data) {
+  if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage(Object.assign({action: action}, data || {}));
+  }
+}
 </script>
 </body>
 </html>
