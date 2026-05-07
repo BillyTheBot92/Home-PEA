@@ -387,16 +387,8 @@ function loadAll(){
   assets = [{
     id:'dcam',ticker:'DCAM.PA',name:'Amundi PEA Monde MSCI World',
     color:'#4d9eff',price:5.684,prev:5.650,loaded:false,alerts:{high:null,low:null},
-    deps:[
-      {id:1,date:'2026-03-30',parts:5,price:5.224,amount:26.12},
-      {id:2,date:'2026-04-07',parts:10,price:5.356,amount:53.56},
-      {id:3,date:'2026-05-03',parts:8,price:5.655,amount:45.24}
-    ],
-    virements:[
-      {id:10,date:'2026-03-30',amount:30},
-      {id:11,date:'2026-04-06',amount:50},
-      {id:12,date:'2026-05-01',amount:50}
-    ]
+    deps:[],
+    virements:[]
   }];
   saveAll();
 }
@@ -827,7 +819,7 @@ function renderConsolidated(){
   var html='<div class="card">';
   html+='<div class="card-hd">Vue globale PEA <span class="chip chip-purple">'+assets.length+' actif'+(assets.length>1?'s':'')+'</span></div>';
   html+='<div class="hero-total" style="color:'+pvCol+'">'+fE(g.totalPEA)+'</div>';
-  html+='<div class="hero-sub"><span class="chip '+(g.pv>=0?'chip-green':'chip-red')+'">'+sg(g.pv)+fE(g.pv)+' ('+sg(g.pvPct)+g.pvPct.toFixed(2)+'%)</span><span>Total PEA Saxo</span></div>';
+  html+='<div class="hero-sub"><span class="chip '+(g.pv>=0?'chip-green':'chip-red')+'">'+sg(g.pv)+fE(g.pv)+' ('+sg(g.pvPct)+g.pvPct.toFixed(2)+'%)</span><span>Total PEA</span></div>';
   html+='<div class="grid2">';
   html+='<div class="mini-card bc-blue"><div class="mc-l b">Valeur parts</div><div class="mc-v">'+fE(g.totalVal)+'</div><div class="mc-sub">tous actifs</div></div>';
   html+='<div class="mini-card bc-blue"><div class="mc-l b">Liquidités</div><div class="mc-v">'+fE(g.totalLiq)+'</div><div class="mc-sub">disponibles</div></div>';
@@ -1344,7 +1336,7 @@ function renderHistory(a){
     var html='<div class="month-block" style="border-left:3px solid '+bc+';">';
     html+='<div class="mb-header"><div class="mb-month">'+mlbl+'</div>'+(totP>0?'<div class="mb-pv"><div class="mb-pv-val" style="color:'+col+';">'+sg(pv)+fE(pv)+'</div><div class="mb-pv-pct" style="color:'+col+';">'+sg(pct)+pct.toFixed(1)+'%</div></div>':'')+'</div>';
     html+='<div class="mb-blocks">';
-    if(totV>0)html+='<div class="mb-vir"><div class="mb-label b">💳 Virement</div><div class="mb-val b">+'+fE(totV)+'</div><div class="mb-sub">CA → PEA Saxo</div></div>';
+    if(totV>0)html+='<div class="mb-vir"><div class="mb-label b">💳 Virement</div><div class="mb-val b">+'+fE(totV)+'</div><div class="mb-sub">Compte Privé → PEA</div></div>';
     if(totP>0)html+='<div class="mb-buy"><div class="mb-label g">📈 '+a.ticker.replace('.PA','')+'</div><div class="mb-val g">'+totP+' parts</div><div class="mb-sub">'+(g.deps.length===1?g.deps[0].price.toFixed(3)+'€/part':'prix var.')+' · '+fE(totI)+(hasBoth?' · reste: '+fE(Math.max(0,reste)):'')+'</div></div>';
     html+='</div>';
     if(totP>0)html+='<div class="mb-now"><div style="font-size:11px;color:var(--text3);">Vaut maintenant</div><div style="font-family:JetBrains Mono,monospace;font-weight:700;font-size:14px;color:'+col+';">'+fE(totCV)+'</div></div>';
@@ -1805,7 +1797,7 @@ function getStrategicTips(a,ins){
   var today=new Date();
   var dom=today.getDate();
   if(dom>=28){
-    tips.push({color:'var(--gold)',icon:'📆',title:'Fin de mois',text:'Le mois prochain commence bientôt. Pense à préparer ton virement de 50€ depuis Crédit Agricole pour le 5 du mois.'});
+    tips.push({color:'var(--gold)',icon:'📆',title:'Fin de mois',text:'Le mois prochain commence bientôt. Pense à préparer ton virement de 50€ depuis Compte Privé pour le 5 du mois.'});
   } else if(dom<=7){
     tips.push({color:'var(--blue)',icon:'🚀',title:'Début de mois — moment idéal',text:'Tu as la fraîcheur du mois. Vire tes 50€ et achète tes parts entre 10h et 16h pour éviter la volatilité d\'ouverture/clôture.'});
   } else {
@@ -1865,7 +1857,7 @@ function checkMonthlyReminder(){
       assets.forEach(function(a){a.deps.forEach(function(d){if(d.date.substring(0,7)===thisMonthKey)hasBuyThisMonth=true;});});
       if(!hasBuyThisMonth){
         new Notification('💰 C\'est l\'heure de ton DCA !',{
-          body:'Vire 50€ depuis Crédit Agricole et achète tes parts ce mois-ci.',
+          body:'Vire 50€ depuis Compte Privé et achète tes parts ce mois-ci.',
           icon:'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22%3E%3Crect width=%2264%22 height=%2264%22 rx=%2212%22 fill=%22%2300e07a%22/%3E%3Ctext x=%2250%25%22 y=%2255%25%22 text-anchor=%22middle%22 dy=%22.35em%22 font-size=%2230%22%3E💰%3C/text%3E%3C/svg%3E'
         });
         localStorage.setItem('pea-last-reminder',thisMonth);
