@@ -22,6 +22,9 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance"],
-  "lang": "fr"
+  "categories": [
+    "finance"
+  ],
+  "lang": "fr",
+  "id": "/home-trade"
 }

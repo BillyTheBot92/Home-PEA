@@ -3,7 +3,7 @@
 // Cache offline + démarrage rapide + notifications background
 // ═══════════════════════════════════════════════════════════
 
-const SW_VERSION = '3.5.1';
+const SW_VERSION = '3.5.2';
 const CACHE_NAME = 'monpea-v' + SW_VERSION;
 
 const PRECACHE_URLS = [
