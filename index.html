@@ -256,13 +256,14 @@ canvas{display:block;width:100%!important}
     <img src="icon-192.png" alt="HOME PEA" style="width:28px;height:28px;border-radius:7px;display:block;">
     <div class="live-dot" id="live-dot" style="position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg);"></div>
   </div>
-  <div class="app-title">HOME PEA <span class="app-version">v3.5.1</span></div>
+  <div class="app-title">HOME PEA <span class="app-version">v3.5.2</span></div>
   <div class="topbar-right">
     <div class="topbar-price" id="topbar-price" style="display:none">
       <div class="tp-val" id="tp-val">—</div>
       <div class="tp-chg" id="tp-chg">—</div>
     </div>
     <button class="icon-btn" id="refresh-btn" onclick="doRefresh()" title="Actualiser">↻</button>
+    <button class="icon-btn" onclick="goTab(5,null)" title="Paramètres" style="margin-left:4px;">⚙️</button>
   </div>
 </div>
 
@@ -290,7 +291,6 @@ canvas{display:block;width:100%!important}
     <button class="nav-btn n2" onclick="goTab(2,this)">💳 Opérations</button>
     <button class="nav-btn n3" onclick="goTab(3,this)">🔮 Simulateur</button>
     <button class="nav-btn n4" onclick="goTab(4,this)">🤖 Assistant</button>
-    <button class="nav-btn n5" onclick="goTab(5,this)">⚙️ Paramètres</button>
   </div>
   <button class="scroll-arrow scroll-arrow-r nav-arrow" onclick="scrollH('nav-bar',1)" id="nav-arrow-r">›</button>
 </div>
@@ -354,8 +354,7 @@ var currentTab = 0;
 var simRate = 0.07;
 var taxRate = 0.186; // Prélèvements sociaux PEA après 5 ans (éditable dans Paramètres)
 var simMode = 'global'; // 'global' ou 'etf'
-var simGlobalMode = 'a'; // 'a' (auto proportionnel) ou 'b' (glisseurs)
-var simWeights = {}; // Poids manuels par actif (Option B)
+var simGlobalMode = 'a'; // 'a' = auto proportionnel, 'b' = glisseurs
 var pendingAsset = null;
 var histData = {};
 var chartInsts = {};
@@ -855,7 +854,7 @@ function render(){
   var html='';
   // Onglets globaux (accessibles même sans actif sélectionné)
   if(currentTab===3){
-    html=renderSim();
+    if(!ca){ html=renderSimGlobal(); } else { html=renderSimETF(ca); }
   } else if(currentTab===4){
     html=renderAssistant();
   } else if(currentTab===5){
@@ -923,11 +922,11 @@ function renderConsolidated(){
   // Performance mensuelle globale
   html+='<div class="card"><div class="card-hd">Performance mensuelle</div>';
   html+='<div style="height:180px;"><canvas id="perf-chart"></canvas></div></div>';
-  // ── CAMEMBERT RÉPARTITION ──
+  // CAMEMBERT RÉPARTITION
   html+='<div class="card"><div class="card-hd">Répartition réelle du portefeuille</div>';
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:center;">';
-  html+='<div style="height:220px;"><canvas id="pie-chart"></canvas></div>';
-  html+='<div id="pie-legend" style="display:flex;flex-direction:column;gap:8px;"></div>';
+  html+='<div style="height:200px;"><canvas id="pie-chart"></canvas></div>';
+  html+='<div id="pie-legend" style="display:flex;flex-direction:column;gap:6px;"></div>';
   html+='</div></div>';
   return html;
 }
@@ -938,8 +937,7 @@ function postRenderConsolidated(){
 }
 
 function drawPieChart(){
-  var cv=document.getElementById('pie-chart');
-  if(!cv)return;
+  var cv=document.getElementById('pie-chart');if(!cv)return;
   if(chartInsts['pie'])chartInsts['pie'].destroy();
   var total=assets.reduce(function(s,a){var st=assetStats(a);return s+st.curV;},0)||1;
   var labels=[],data=[],colors=[];
@@ -949,7 +947,6 @@ function drawPieChart(){
     data.push(parseFloat(st.curV.toFixed(2)));
     colors.push(a.color||'#4d9eff');
   });
-  // Légende
   var leg=document.getElementById('pie-legend');
   if(leg){
     leg.innerHTML=assets.map(function(a,i){
@@ -1551,7 +1548,6 @@ function renderOps(a){
   // History
   html+='<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Historique des achats</div>';
   html+=renderHistory(a);
-  // Save/export → centralisé dans Paramètres
   return html;
 }
 
@@ -1749,103 +1745,189 @@ function closeEditModal(){
 // SIMULATOR TAB
 // ════════════════════════════════════════
 var simM=100,simY=20;
-function renderSim(){
-  var a=curAsset();
+function renderSimGlobal(){
   var html='';
-
-  // ── TOGGLE GLOBAL / PAR ETF ──
-  html+='<div style="display:flex;gap:6px;margin-bottom:16px;">';
-  html+='<button class="btn '+(simMode==='global'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimMode(\'global\')">📊 Global</button>';
-  html+='<button class="btn '+(simMode==='etf'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimMode(\'etf\')">🎯 Par ETF</button>';
+  // Toggle Option A / B
+  html+='<div style="display:flex;gap:6px;margin-bottom:14px;">';
+  html+='<button class="btn '+(simGlobalMode==='a'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimGlobalMode(\'a\')">Auto (proportionnel)</button>';
+  html+='<button class="btn '+(simGlobalMode==='b'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimGlobalMode(\'b\')">Glisseurs manuels</button>';
   html+='</div>';
-
-  if(simMode==='etf' && a){
-    // ── SIMULATEUR PAR ETF ──
-    html+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">🎯 Simulation pour <strong style="color:var(--text)">'+a.ticker.replace('.PA','')+'</strong> — cours actuel : <strong style="color:var(--blue)">'+a.price.toFixed(3)+'€</strong></div>';
-    html+='<div class="card"><div class="card-hd">Tes paramètres</div>';
-    html+='<div class="form-grid" style="margin-bottom:10px;">';
-    html+='<div class="form-field"><label>Versement/mois (€)</label><input type="number" id="sim-m" value="'+simM+'" min="1" max="10000" step="5" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
-    html+='<div class="form-field"><label>Durée (années)</label><input type="number" id="sim-y" value="'+simY+'" min="1" max="50" step="1" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
-    html+='</div>';
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;">';
-    html+='<div><input type="range" id="rng-m" min="10" max="2000" value="'+simM+'" step="10" oninput="syncM()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>10€</span><span>2000€</span></div></div>';
-    html+='<div><input type="range" id="rng-y" min="1" max="50" value="'+simY+'" step="1" oninput="syncY()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>1 an</span><span>50 ans</span></div></div>';
-    html+='</div></div>';
-    html+='<div class="card"><div class="card-hd">Rendement estimé</div><div class="scen-row">';
-    html+='<button class="scen-btn'+(simRate===0.03?' active':'')+'" data-r="0.03" onclick="pickScen(this)">🐢 3%<br><span style="font-size:9px;opacity:.6;">Prudent</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.05?' active':'')+'" data-r="0.05" onclick="pickScen(this)">⚖️ 5%<br><span style="font-size:9px;opacity:.6;">Modéré</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.07?' active':'')+'" data-r="0.07" onclick="pickScen(this)">📈 7%<br><span style="font-size:9px;opacity:.6;">Historique</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.10?' active':'')+'" data-r="0.10" onclick="pickScen(this)">🚀 10%<br><span style="font-size:9px;opacity:.6;">Optimiste</span></button>';
-    html+='</div></div>';
-    html+='<div class="card"><div class="card-hd">Résultats pour '+a.ticker.replace('.PA','')+'</div>';
-    html+='<div class="sr-grid">';
-    html+='<div class="sr"><div class="sr-l">Tu verses</div><div class="sr-v" id="sr-v">—</div><div class="sr-sub" id="sr-vs">—</div></div>';
-    html+='<div class="sr" style="background:var(--gdim);border:1px solid var(--gborder)"><div class="sr-l" style="color:var(--green)">Capital</div><div class="sr-v" style="color:var(--green)" id="sr-c">—</div><div class="sr-sub" id="sr-cs">estimé</div></div>';
-    html+='<div class="sr"><div class="sr-l">Gain</div><div class="sr-v" id="sr-g">—</div><div class="sr-sub" id="sr-gs">—</div></div>';
-    html+='</div>';
-    html+='<div style="height:190px;background:var(--s2);border-radius:var(--r3);padding:8px;"><canvas id="sim-chart"></canvas></div>';
-    html+='<div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;">';
-    html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">Parts '+a.ticker.replace('.PA','')+'/ mois ('+a.price.toFixed(3)+'€)</span><strong class="mono" id="sim-pts-m">—</strong></div></div>';
-    html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">Parts totales estimées</span><strong class="mono" id="sim-pts-t">—</strong></div></div>';
-    html+='</div>';
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">';
-    html+='<div class="mini-card bc-green" style="text-align:center;"><div class="mc-l g" style="margin-bottom:4px;">✅ Avec PEA</div><div style="font-size:22px;font-weight:900;color:var(--green);">'+(taxRate*100).toFixed(1)+'%</div><div style="font-size:10px;color:var(--text3);">prélèvements</div><div style="font-size:13px;font-weight:700;color:var(--green);margin-top:6px;" id="tax-pea">—</div></div>';
-    html+='<div class="mini-card bc-red" style="text-align:center;"><div class="mc-l r" style="margin-bottom:4px;">❌ Sans PEA</div><div style="font-size:22px;font-weight:900;color:var(--red);">30%</div><div style="font-size:10px;color:var(--text3);">flat tax</div><div style="font-size:13px;font-weight:700;color:var(--red);margin-top:6px;" id="tax-norm">—</div></div>';
-    html+='</div>';
-    html+='<div style="background:var(--gdim);border:1px solid var(--gborder);border-radius:var(--r3);padding:10px 12px;margin-top:8px;text-align:center;"><span style="font-size:12px;color:var(--text2);">Tu économises grâce au PEA : </span><strong style="color:var(--green);font-size:14px;font-family:JetBrains Mono,monospace;" id="tax-saved">—</strong></div>';
-    html+='</div></div>';
-
-  } else {
-    // ── SIMULATEUR GLOBAL (A + B) ──
-    html+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;">📊 Simulation globale — répartition sur tous tes actifs.</div>';
-    // Toggle Option A / Option B
-    html+='<div style="display:flex;gap:6px;margin-bottom:14px;">';
-    html+='<button class="btn '+(simGlobalMode==='a'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimGlobalMode(\'a\')">Auto (proportionnel)</button>';
-    html+='<button class="btn '+(simGlobalMode==='b'?'btn-blue':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setSimGlobalMode(\'b\')">Glisseurs manuels</button>';
-    html+='</div>';
-    html+='<div class="card"><div class="card-hd">Paramètres globaux</div>';
-    html+='<div class="form-grid" style="margin-bottom:10px;">';
-    html+='<div class="form-field"><label>Versement/mois (€)</label><input type="number" id="sim-m" value="'+simM+'" min="1" max="10000" step="5" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
-    html+='<div class="form-field"><label>Durée (années)</label><input type="number" id="sim-y" value="'+simY+'" min="1" max="50" step="1" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
-    html+='</div>';
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;">';
-    html+='<div><input type="range" id="rng-m" min="10" max="2000" value="'+simM+'" step="10" oninput="syncM()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>10€</span><span>2000€</span></div></div>';
-    html+='<div><input type="range" id="rng-y" min="1" max="50" value="'+simY+'" step="1" oninput="syncY()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>1 an</span><span>50 ans</span></div></div>';
-    html+='</div>';
-    if(simGlobalMode==='b'){
-      html+='<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">';
-      var totalVal=assets.reduce(function(s,a){return s+assetStats(a).curV;},0)||1;
-      assets.forEach(function(ast,i){
-        var st=assetStats(ast);
-        var pct=Math.round((st.curV/totalVal)*100);
-        html+='<div style="background:var(--s2);padding:10px;border-radius:6px;">';
-        html+='<div style="display:flex;justify-content:space-between;font-size:9px;font-weight:700;margin-bottom:6px;color:var(--text3);"><span>'+ast.ticker.replace('.PA','')+'</span><span id="sl-val-'+i+'">'+pct+'%</span></div>';
-        html+='<input type="range" style="width:100%;height:4px;border-radius:2px;background:var(--border);outline:none;-webkit-appearance:none;" id="sl-'+i+'" min="0" max="100" value="'+pct+'" oninput="syncSliders('+i+')">';
-        html+='</div>';
-      });
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;">📊 <strong style="color:var(--text)">Simulateur Global</strong> — répartition sur tous tes actifs.</div>';
+  html+='<div class="card"><div class="card-hd">Tes paramètres</div>';
+  html+='<div class="form-grid" style="margin-bottom:10px;">';
+  html+='<div class="form-field"><label>Versement/mois (€)</label><input type="number" id="sim-m" value="'+simM+'" min="1" max="10000" step="5" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
+  html+='<div class="form-field"><label>Durée (années)</label><input type="number" id="sim-y" value="'+simY+'" min="1" max="50" step="1" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;">';
+  html+='<div><input type="range" id="rng-m" min="10" max="2000" value="'+simM+'" step="10" oninput="syncM()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>10€</span><span>2000€</span></div></div>';
+  html+='<div><input type="range" id="rng-y" min="1" max="50" value="'+simY+'" step="1" oninput="syncY()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>1 an</span><span>50 ans</span></div></div>';
+  html+='</div>';
+  if(simGlobalMode==='b'){
+    html+='<div style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">';
+    var totalVal=assets.reduce(function(s,a){return s+assetStats(a).curV;},0)||1;
+    assets.forEach(function(ast,i){
+      var pct=Math.round(assetStats(ast).curV/totalVal*100);
+      html+='<div style="background:var(--s2);padding:10px;border-radius:var(--r3);">';
+      html+='<div style="display:flex;justify-content:space-between;font-size:9px;font-weight:700;margin-bottom:6px;color:var(--text3);"><span>'+ast.ticker.replace('.PA','')+'</span><span id="sl-val-'+i+'">'+pct+'%</span></div>';
+      html+='<input type="range" style="width:100%;height:4px;" id="sl-'+i+'" min="0" max="100" value="'+pct+'" oninput="syncSliders('+i+')">';
       html+='</div>';
-    }
-    html+='</div>';
-    html+='<div class="card"><div class="card-hd">Rendement estimé</div><div class="scen-row">';
-    html+='<button class="scen-btn'+(simRate===0.03?' active':'')+'" data-r="0.03" onclick="pickScen(this)">🐢 3%<br><span style="font-size:9px;opacity:.6;">Prudent</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.05?' active':'')+'" data-r="0.05" onclick="pickScen(this)">⚖️ 5%<br><span style="font-size:9px;opacity:.6;">Modéré</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.07?' active':'')+'" data-r="0.07" onclick="pickScen(this)">📈 7%<br><span style="font-size:9px;opacity:.6;">Historique</span></button>';
-    html+='<button class="scen-btn'+(simRate===0.10?' active':'')+'" data-r="0.10" onclick="pickScen(this)">🚀 10%<br><span style="font-size:9px;opacity:.6;">Optimiste</span></button>';
-    html+='</div></div>';
-    html+='<div class="card"><div class="card-hd">Résultats par actif</div>';
-    html+='<div id="global-sim-results" style="display:flex;flex-direction:column;gap:8px;"></div>';
-    html+='<div style="height:190px;background:var(--s2);border-radius:var(--r3);padding:8px;margin-top:12px;"><canvas id="sim-chart"></canvas></div>';
-    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">';
-    html+='<div class="mini-card bc-green" style="text-align:center;"><div class="mc-l g" style="margin-bottom:4px;">✅ Avec PEA</div><div style="font-size:22px;font-weight:900;color:var(--green);">'+(taxRate*100).toFixed(1)+'%</div><div style="font-size:10px;color:var(--text3);">prélèvements</div><div style="font-size:13px;font-weight:700;color:var(--green);margin-top:6px;" id="tax-pea">—</div></div>';
-    html+='<div class="mini-card bc-red" style="text-align:center;"><div class="mc-l r" style="margin-bottom:4px;">❌ Sans PEA</div><div style="font-size:22px;font-weight:900;color:var(--red);">30%</div><div style="font-size:10px;color:var(--text3);">flat tax</div><div style="font-size:13px;font-weight:700;color:var(--red);margin-top:6px;" id="tax-norm">—</div></div>';
-    html+='</div>';
-    html+='<div style="background:var(--gdim);border:1px solid var(--gborder);border-radius:var(--r3);padding:10px 12px;margin-top:8px;text-align:center;"><span style="font-size:12px;color:var(--text2);">Tu économises grâce au PEA : </span><strong style="color:var(--green);font-size:14px;font-family:JetBrains Mono,monospace;" id="tax-saved">—</strong></div>';
+    });
     html+='</div>';
   }
+  html+='</div>';
+  html+='<div class="card"><div class="card-hd">Rendement estimé</div><div class="scen-row">';
+  html+='<button class="scen-btn'+(simRate===0.03?' active':'')+'" data-r="0.03" onclick="pickScen(this)">🐢 3%<br><span style="font-size:9px;opacity:.6;">Prudent</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.05?' active':'')+'" data-r="0.05" onclick="pickScen(this)">⚖️ 5%<br><span style="font-size:9px;opacity:.6;">Modéré</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.07?' active':'')+'" data-r="0.07" onclick="pickScen(this)">📈 7%<br><span style="font-size:9px;opacity:.6;">Historique</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.10?' active':'')+'" data-r="0.10" onclick="pickScen(this)">🚀 10%<br><span style="font-size:9px;opacity:.6;">Optimiste</span></button>';
+  html+='</div></div>';
+  html+='<div class="card"><div class="card-hd">Résultats par actif</div><div id="global-sim-results"></div></div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">';
+  html+='<div class="mini-card bc-green" style="text-align:center;"><div class="mc-l g" style="margin-bottom:4px;">✅ Avec PEA</div><div style="font-size:22px;font-weight:900;color:var(--green);">'+(taxRate*100).toFixed(1)+'%</div><div style="font-size:10px;color:var(--text3);">prélèvements</div><div style="font-size:13px;font-weight:700;color:var(--green);margin-top:6px;" id="tax-pea">—</div></div>';
+  html+='<div class="mini-card bc-red" style="text-align:center;"><div class="mc-l r" style="margin-bottom:4px;">❌ Sans PEA</div><div style="font-size:22px;font-weight:900;color:var(--red);">30%</div><div style="font-size:10px;color:var(--text3);">flat tax</div><div style="font-size:13px;font-weight:700;color:var(--red);margin-top:6px;" id="tax-norm">—</div></div>';
+  html+='</div>';
+  html+='<div style="background:var(--gdim);border:1px solid var(--gborder);border-radius:var(--r3);padding:10px 12px;margin-top:8px;text-align:center;"><span style="font-size:12px;color:var(--text2);">Tu économises grâce au PEA : </span><strong style="color:var(--green);font-size:14px;font-family:JetBrains Mono,monospace;" id="tax-saved">—</strong></div>';
   html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:8px;line-height:1.6;">Projections indicatives. Risque de perte en capital.</div>';
   return html;
 }
 
+function renderSimETF(a){
+  var html='';
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5;">🎯 Simulation pour <strong style="color:var(--text)">'+a.ticker.replace('.PA','')+'</strong> — cours actuel : <strong style="color:var(--blue)">'+a.price.toFixed(3)+'€</strong></div>';
+  html+='<div class="card"><div class="card-hd">Tes paramètres</div>';
+  html+='<div class="form-grid" style="margin-bottom:10px;">';
+  html+='<div class="form-field"><label>Versement/mois (€)</label><input type="number" id="sim-m" value="'+simM+'" min="1" max="10000" step="5" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
+  html+='<div class="form-field"><label>Durée (années)</label><input type="number" id="sim-y" value="'+simY+'" min="1" max="50" step="1" style="font-size:22px;font-weight:800;text-align:center;padding:12px;" oninput="updSim()"></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:6px;">';
+  html+='<div><input type="range" id="rng-m" min="10" max="2000" value="'+simM+'" step="10" oninput="syncM()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>10€</span><span>2000€</span></div></div>';
+  html+='<div><input type="range" id="rng-y" min="1" max="50" value="'+simY+'" step="1" oninput="syncY()"><div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3)"><span>1 an</span><span>50 ans</span></div></div>';
+  html+='</div></div>';
+  html+='<div class="card"><div class="card-hd">Rendement estimé</div><div class="scen-row">';
+  html+='<button class="scen-btn'+(simRate===0.03?' active':'')+'" data-r="0.03" onclick="pickScen(this)">🐢 3%<br><span style="font-size:9px;opacity:.6;">Prudent</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.05?' active':'')+'" data-r="0.05" onclick="pickScen(this)">⚖️ 5%<br><span style="font-size:9px;opacity:.6;">Modéré</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.07?' active':'')+'" data-r="0.07" onclick="pickScen(this)">📈 7%<br><span style="font-size:9px;opacity:.6;">Historique</span></button>';
+  html+='<button class="scen-btn'+(simRate===0.10?' active':'')+'" data-r="0.10" onclick="pickScen(this)">🚀 10%<br><span style="font-size:9px;opacity:.6;">Optimiste</span></button>';
+  html+='</div></div>';
+  html+='<div class="card"><div class="card-hd">Résultats pour '+a.ticker.replace('.PA','')+'</div>';
+  html+='<div class="sr-grid">';
+  html+='<div class="sr"><div class="sr-l">Tu verses</div><div class="sr-v" id="sr-v">—</div><div class="sr-sub" id="sr-vs">—</div></div>';
+  html+='<div class="sr" style="background:var(--gdim);border:1px solid var(--gborder)"><div class="sr-l" style="color:var(--green)">Capital</div><div class="sr-v" style="color:var(--green)" id="sr-c">—</div><div class="sr-sub" id="sr-cs">estimé</div></div>';
+  html+='<div class="sr"><div class="sr-l">Gain</div><div class="sr-v" id="sr-g">—</div><div class="sr-sub" id="sr-gs">—</div></div>';
+  html+='</div>';
+  html+='<div style="height:190px;background:var(--s2);border-radius:var(--r3);padding:8px;"><canvas id="sim-chart"></canvas></div>';
+  html+='<div style="display:flex;flex-direction:column;gap:7px;margin-top:12px;">';
+  html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">Parts '+a.ticker.replace('.PA','')+'/ mois ('+a.price.toFixed(3)+'€)</span><strong class="mono" id="sim-pts-m">—</strong></div></div>';
+  html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--text2)">Parts totales estimées</span><strong class="mono" id="sim-pts-t">—</strong></div></div>';
+  html+='<div class="mini-card bc-green"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--green)">🏛️ Après 5 ans PEA</span><strong style="color:var(--green)">'+(taxRate*100).toFixed(1)+'% seulement</strong></div></div>';
+  html+='</div>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">';
+  html+='<div class="mini-card bc-green" style="text-align:center;"><div class="mc-l g" style="margin-bottom:4px;">✅ Avec PEA</div><div style="font-size:22px;font-weight:900;color:var(--green);">'+(taxRate*100).toFixed(1)+'%</div><div style="font-size:10px;color:var(--text3);">prélèvements</div><div style="font-size:13px;font-weight:700;color:var(--green);margin-top:6px;" id="tax-pea">—</div></div>';
+  html+='<div class="mini-card bc-red" style="text-align:center;"><div class="mc-l r" style="margin-bottom:4px;">❌ Sans PEA</div><div style="font-size:22px;font-weight:900;color:var(--red);">30%</div><div style="font-size:10px;color:var(--text3);">flat tax</div><div style="font-size:13px;font-weight:700;color:var(--red);margin-top:6px;" id="tax-norm">—</div></div>';
+  html+='</div>';
+  html+='<div style="background:var(--gdim);border:1px solid var(--gborder);border-radius:var(--r3);padding:10px 12px;margin-top:8px;text-align:center;"><span style="font-size:12px;color:var(--text2);">Tu économises grâce au PEA : </span><strong style="color:var(--green);font-size:14px;font-family:JetBrains Mono,monospace;" id="tax-saved">—</strong></div>';
+  html+='</div>';
+  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:8px;line-height:1.6;">Projections indicatives. Risque de perte en capital.</div>';
+  return html;
+}
+
+function renderSim(){ return ''; }
+
+function postRenderSim(){
+  // Set active scen btn
+  document.querySelectorAll('.scen-btn').forEach(function(b){b.classList.toggle('active',parseFloat(b.dataset.r)===simRate);});
+  updSim();
+}
+
+function syncM(){var v=parseInt(document.getElementById('rng-m').value);simM=v;var i=document.getElementById('sim-m');if(i)i.value=v;updSim();}
+function syncY(){var v=parseInt(document.getElementById('rng-y').value);simY=v;var i=document.getElementById('sim-y');if(i)i.value=v;updSim();}
+function pickScen(btn){simRate=parseFloat(btn.dataset.r);document.querySelectorAll('.scen-btn').forEach(function(b){b.classList.remove('active');});btn.classList.add('active');updSim();}
+
+function calcCap(m,y,r){var t=0;for(var i=0;i<y*12;i++)t=(t+m)*(1+r/12);return t;}
+
+function updSim(){
+  var mi=document.getElementById('sim-m'),yi=document.getElementById('sim-y');
+  var rm=document.getElementById('rng-m'),ry=document.getElementById('rng-y');
+  simM=parseInt(mi?mi.value:50)||50;simY=parseInt(yi?yi.value:10)||10;
+  simM=Math.max(1,Math.min(10000,simM));simY=Math.max(1,Math.min(50,simY));
+  if(rm)rm.value=simM;if(ry)ry.value=simY;
+  function s(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
+  var ca=curAsset();
+
+  if(!ca){
+    // ── GLOBAL ──
+    var totalVal=assets.reduce(function(sum,a){return sum+assetStats(a).curV;},0)||1;
+    var resEl=document.getElementById('global-sim-results');
+    if(resEl){
+      var totalFinal=0,totalVersed=simM*12*simY,html2='';
+      assets.forEach(function(ast,i){
+        var weight=0;
+        if(simGlobalMode==='a'){
+          weight=assetStats(ast).curV/totalVal;
+        } else {
+          var sl=document.getElementById('sl-'+i);
+          weight=sl?parseFloat(sl.value)/100:assetStats(ast).curV/totalVal;
+        }
+        if(ast.price<=0||weight<=0)return;
+        var price=ast.price,totalParts=0,monthlyAmt=simM*weight;
+        for(var m=0;m<simY*12;m++){price=price*(1+simRate/12);totalParts+=monthlyAmt/price;}
+        var finalVal=totalParts*price;
+        totalFinal+=finalVal;
+        var ptsM=Math.floor(monthlyAmt/ast.price);
+        html2+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">';
+        html2+='<span style="color:var(--text2)">'+ast.ticker.replace('.PA','')+' ('+fE(monthlyAmt,0)+'/mois → ~'+ptsM+' parts)</span>';
+        html2+='<strong class="mono" style="color:var(--green)">'+fE(finalVal)+'</strong>';
+        html2+='</div></div>';
+      });
+      html2+='<div class="mini-card bc-green"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--green);font-weight:700;">Total estimé</span><strong class="mono" style="color:var(--green);font-size:14px;">'+fE(totalFinal)+'</strong></div></div>';
+      resEl.innerHTML=html2;
+      var totalGain=totalFinal-totalVersed;
+      var taxPEA=Math.max(0,totalGain)*taxRate,taxNorm=Math.max(0,totalGain)*0.30;
+      s('tax-pea','Impôt: '+fE(taxPEA));s('tax-norm','Impôt: '+fE(taxNorm));s('tax-saved',fE(taxNorm-taxPEA));
+    }
+  } else {
+    // ── PAR ETF ──
+    var cap=calcCap(simM,simY,simRate),inv=simM*12*simY,gain=cap-inv,gainPct=inv>0?(gain/inv*100):0;
+    s('sr-v',fmtK(inv));s('sr-vs',simM+'€ × '+simY*12+' mois');
+    s('sr-c',fmtK(cap));s('sr-cs','à '+(simRate*100).toFixed(0)+'%/an');
+    s('sr-g',sg(gain)+fmtK(gain));
+    var ge=document.getElementById('sr-g');if(ge)ge.style.color=gain>=0?'var(--green)':'var(--red)';
+    s('sr-gs',sg(gainPct)+gainPct.toFixed(1)+'%');
+    var price=ca.price||0,totalParts=0;
+    for(var m=0;m<simY*12;m++){price=price*(1+simRate/12);totalParts+=simM/price;}
+    var ptsM=ca.price>0?Math.floor(simM/ca.price):0;
+    s('sim-pts-m',ptsM+' parts/mois');
+    s('sim-pts-t',totalParts.toFixed(2)+' parts (~'+fE(totalParts*price)+')');
+    var taxPEA2=Math.max(0,gain)*taxRate,taxNorm2=Math.max(0,gain)*0.30;
+    s('tax-pea','Impôt: '+fE(taxPEA2));s('tax-norm','Impôt: '+fE(taxNorm2));s('tax-saved',fE(taxNorm2-taxPEA2));
+  }
+  drawSimChart(simM,simY);
+}
+
+function drawSimChart(m,y){
+  var cv=document.getElementById('sim-chart');if(!cv)return;
+  var wi=[],wo=[],lbls=[];
+  for(var i=0;i<=y;i++){wi.push(parseFloat(calcCap(m,i,simRate).toFixed(2)));wo.push(m*12*i);lbls.push('An '+i);}
+  cv.height=170;
+  if(chartInsts['sim'])chartInsts['sim'].destroy();
+  chartInsts['sim']=new Chart(cv.getContext('2d'),{
+    type:'line',
+    data:{labels:lbls,datasets:[
+      {label:'Capital',data:wi,borderColor:'#9d7dff',borderWidth:2,fill:true,backgroundColor:(function(){var g=cv.getContext('2d').createLinearGradient(0,0,0,170);g.addColorStop(0,'rgba(157,125,255,0.25)');g.addColorStop(1,'rgba(157,125,255,0)');return g;})(),pointRadius:0,tension:0.4},
+      {label:'Versé',data:wo,borderColor:'rgba(255,255,255,0.15)',borderWidth:1.5,fill:false,pointRadius:0,borderDash:[4,3]}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+fmtK(c.parsed.y);}}}},
+      scales:{x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#484860',font:{size:10}}},y:{position:'right',grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#484860',font:{size:10,family:'JetBrains Mono'},callback:function(v){return fmtK(v);}}}}
+    }
+  });
+  // 5yr marker
+  if(y>=5){
+    var chart=chartInsts['sim'];
+    chart.options.plugins.annotation={annotations:{line5:{type:'line',xMin:5,xMax:5,borderColor:'rgba(0,224,122,0.5)',borderWidth:1,borderDash:[5,3],label:{display:true,content:'PEA 5 ans',color:'#00e07a',font:{size:9}}}}};
+    chart.update();
+  }
+}
 
 // ════════════════════════════════════════
 // ASSISTANT INTELLIGENT
@@ -2075,7 +2157,7 @@ function renderSettings(){
   html+='<div style="font-size:11px;color:var(--text2);line-height:1.5;">Ouvre cette page dans Chrome → Menu (⋮) → "Ajouter à l\'écran d\'accueil". Tu auras une vraie icône d\'appli en plein écran sans la barre du navigateur.</div>';
   html+='</div>';
 
-  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:16px;">HOME PEA v3.5.1</div>';
+  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:16px;">HOME PEA v3.5.2</div>';
 
   return html;
 }
@@ -2389,16 +2471,15 @@ function notifySW(action, data) {
   }
 }
 
-// ── SIMULATEUR : Modes et helpers ──
+// ── Simulateur : changement de mode ──
 function setSimMode(mode){simMode=mode;goTab(3,document.querySelector('.n3'));}
 function setSimGlobalMode(m){simGlobalMode=m;goTab(3,document.querySelector('.n3'));}
-function syncSliders(changedIdx){
+function syncSliders(idx){
   var total=0;
   assets.forEach(function(a,i){var el=document.getElementById('sl-'+i);if(el)total+=parseFloat(el.value)||0;});
   if(total>0){
     assets.forEach(function(a,i){
-      var el=document.getElementById('sl-'+i);
-      var vl=document.getElementById('sl-val-'+i);
+      var el=document.getElementById('sl-'+i),vl=document.getElementById('sl-val-'+i);
       if(el&&vl){var pct=Math.round(parseFloat(el.value)*100/total);el.value=pct;vl.textContent=pct+'%';}
     });
   }
@@ -2406,71 +2487,4 @@ function syncSliders(changedIdx){
 }
 </script>
 </body>
-</html>function updSim(){
-  var mi=document.getElementById('sim-m'),yi=document.getElementById('sim-y');
-  var rm=document.getElementById('rng-m'),ry=document.getElementById('rng-y');
-  simM=parseInt(mi?mi.value:50)||50;simY=parseInt(yi?yi.value:10)||10;
-  simM=Math.max(1,Math.min(10000,simM));simY=Math.max(1,Math.min(50,simY));
-  if(rm)rm.value=simM;if(ry)ry.value=simY;
-  var cap=calcCap(simM,simY,simRate),inv=simM*12*simY,gain=cap-inv;
-  var gainPct=inv>0?(gain/inv*100):0;
-  function s(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
-
-  if(simMode==='global'){
-    // ── GLOBAL : calculer par actif ──
-    var totalVal=assets.reduce(function(s,a){return s+assetStats(a).curV;},0)||1;
-    var resEl=document.getElementById('global-sim-results');
-    if(resEl){
-      var totalFinal=0,totalVersed=simM*12*simY;
-      var html='';
-      assets.forEach(function(a,i){
-        var weight=0;
-        if(simGlobalMode==='a'){
-          weight=assetStats(a).curV/totalVal;
-        } else {
-          var sl=document.getElementById('sl-'+i);
-          weight=sl?parseFloat(sl.value)/100:assetStats(a).curV/totalVal;
-        }
-        var monthlyAmt=simM*weight;
-        var price=a.price||0;
-        if(price===0)return;
-        var totalParts=0;
-        for(var m=0;m<simY*12;m++){price=price*(1+simRate/12);totalParts+=monthlyAmt/price;}
-        var finalVal=totalParts*price;
-        totalFinal+=finalVal;
-        var ptsM=Math.floor((simM*weight)/a.price);
-        html+='<div class="mini-card"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;">';
-        html+='<span style="color:var(--text2)">'+a.ticker.replace('.PA','')+' ('+fE(simM*weight)+'/mois → ~'+ptsM+' parts)</span>';
-        html+='<strong class="mono" style="color:var(--green)">'+fE(finalVal)+'</strong>';
-        html+='</div></div>';
-      });
-      html+='<div class="mini-card bc-green"><div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;"><span style="color:var(--green);font-weight:700;">Total estimé</span><strong class="mono" style="color:var(--green);font-size:14px;">'+fE(totalFinal)+'</strong></div></div>';
-      resEl.innerHTML=html;
-      var totalGain=totalFinal-totalVersed;
-      s('sr-v',fmtK(totalVersed));
-      var taxPEA=Math.max(0,totalGain)*taxRate,taxNorm=Math.max(0,totalGain)*0.30,saved=taxNorm-taxPEA;
-      s('tax-pea','Impôt: '+fE(taxPEA));s('tax-norm','Impôt: '+fE(taxNorm));s('tax-saved',fE(saved));
-    }
-  } else {
-    // ── PAR ETF ──
-    s('sr-v',fmtK(inv));s('sr-vs',simM+'€ × '+simY*12+' mois');
-    s('sr-c',fmtK(cap));s('sr-cs','à '+(simRate*100).toFixed(0)+'%/an');
-    s('sr-g',sg(gain)+fmtK(gain));
-    var ge=document.getElementById('sr-g');if(ge)ge.style.color=gain>=0?'var(--green)':'var(--red)';
-    s('sr-gs',sg(gainPct)+gainPct.toFixed(1)+'%');
-    var a=curAsset()||assets[0];
-    if(a){
-      var price=a.price||0;
-      var totalParts=0;
-      for(var m=0;m<simY*12;m++){price=price*(1+simRate/12);totalParts+=simM/price;}
-      var ptsM=price>0?Math.floor(simM/a.price):0;
-      s('sim-pts-m',ptsM+' parts/mois');
-      s('sim-pts-t',totalParts.toFixed(2)+' parts (~'+fE(totalParts*price)+')');
-    }
-    var taxPEA2=Math.max(0,gain)*taxRate,taxNorm2=Math.max(0,gain)*0.30,saved2=taxNorm2-taxPEA2;
-    s('tax-pea','Impôt: '+fE(taxPEA2));s('tax-norm','Impôt: '+fE(taxNorm2));s('tax-saved',fE(saved2));
-  }
-  drawSimChart(simM,simY);
-}
-
-
+</html>
