@@ -690,6 +690,8 @@ function buildAssetTabs(){
 
 function selectAsset(id,tabEl){
   currentAssetId=id;
+  // Si on était sur Paramètres (5), revenir à Portefeuille (0)
+  if(currentTab===5) currentTab=0;
   document.querySelectorAll('.asset-tab').forEach(function(t){t.classList.remove('active');});
   if(tabEl) tabEl.classList.add('active');
   // Update topbar price
