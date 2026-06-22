@@ -176,6 +176,7 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;displ
 .fp-row strong{color:var(--text);font-family:'JetBrains Mono',monospace}
 .btn{display:inline-flex;align-items:center;gap:5px;padding:9px 16px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:none;font-family:'Inter',sans-serif;transition:all .2s;white-space:nowrap}
 .btn-green{background:var(--green);color:#000}
+.btn-red{background:var(--red);color:#fff}
 .btn-blue{background:var(--blue);color:#fff}
 .btn-ghost{background:var(--s2);color:var(--text2);border:1px solid var(--border)}
 .btn-ghost:hover{color:var(--text)}
@@ -256,7 +257,7 @@ canvas{display:block;width:100%!important}
     <img src="icon-192.png" alt="HOME PEA" style="width:28px;height:28px;border-radius:7px;display:block;">
     <div class="live-dot" id="live-dot" style="position:absolute;bottom:-2px;right:-2px;border:2px solid var(--bg);"></div>
   </div>
-  <div class="app-title">HOME PEA <span class="app-version">v3.5.2</span></div>
+  <div class="app-title">HOME PEA <span class="app-version">v3.5.5</span></div>
   <div class="topbar-right">
     <div class="topbar-price" id="topbar-price" style="display:none">
       <div class="tp-val" id="tp-val">—</div>
@@ -350,6 +351,7 @@ canvas{display:block;width:100%!important}
 var assets = []; // [{id, ticker, name, color, price, prev, deps, alerts}]
 var peaDepots = []; // Dépôts PEA globaux [{id, date, amount}] (compte perso → PEA)
 var currentAssetId = null; // null = vue globale
+var opMode = 'buy'; // 'buy' ou 'sell'
 var currentTab = 0;
 var simRate = 0.07;
 var taxRate = 0.186; // Prélèvements sociaux PEA après 5 ans (éditable dans Paramètres)
@@ -706,6 +708,7 @@ function buildAssetTabs(){
 
 function selectAsset(id,tabEl){
   currentAssetId=id;
+  opMode='buy'; // Reset au mode achat quand on change d'ETF
   // Si on était sur Paramètres (5), revenir à Portefeuille (0)
   if(currentTab===5) currentTab=0;
   document.querySelectorAll('.asset-tab').forEach(function(t){t.classList.remove('active');});
@@ -816,8 +819,16 @@ function confirmAddAsset(){
 }
 
 function removeAsset(id){
-  if(!confirm('Supprimer cet actif et tout son historique ?')) return;
-  assets=assets.filter(function(a){return a.id!==id;});
+  var a=assets.find(function(x){return x.id===id;});
+  if(!a) return;
+  // Bloquer si parts restantes
+  var partsLeft=a.deps.reduce(function(s,d){return s+d.parts;},0);
+  if(partsLeft>0){
+    alert('⛔ Impossible de supprimer '+a.ticker.replace('.PA','')+' : il reste '+partsLeft+' part'+(partsLeft>1?'s':'')+'.\n\nVends toutes tes parts dans l\'onglet Opérations avant de supprimer cet actif.');
+    return;
+  }
+  if(!confirm('Supprimer '+a.ticker.replace('.PA','')+' ? (0 part restante — toutes les ventes sont enregistrées)')) return;
+  assets=assets.filter(function(x){return x.id!==id;});
   saveAll();
   currentAssetId=null;
   buildAssetTabs();
@@ -1583,25 +1594,56 @@ function closePopup(){document.getElementById('popup-overlay').style.display='no
 function renderOps(a){
   var st=assetStats(a);
   var html='';
-  // Summary (par ETF : investi / valeur / gains — pas de liquidités ici)
+  // Summary
   html+='<div class="grid3" style="margin-bottom:12px;">';
   html+='<div class="mini-card"><div class="mc-l">Investi</div><div class="mc-v" style="font-size:15px;">'+fE(st.totI)+'</div></div>';
   html+='<div class="mini-card"><div class="mc-l">Valeur</div><div class="mc-v" style="font-size:15px;">'+fE(st.curV)+'</div></div>';
   html+='<div class="mini-card '+(st.pv>=0?'bc-green':'bc-red')+'"><div class="mc-l '+(st.pv>=0?'g':'r')+'">Gains</div><div class="mc-v" style="font-size:15px;color:'+(st.pv>=0?'var(--green)':'var(--red)')+';">'+sg(st.pv)+fE(st.pv)+'</div></div>';
   html+='</div>';
-  // Form : ACHAT uniquement (date + parts + prix). Les dépôts sont gérés globalement.
-  html+='<div class="card"><div class="card-hd">Enregistrer un achat</div>';
-  html+='<div class="form-grid">';
-  html+='<div class="form-field" style="grid-column:1/-1;"><label>Date</label><input type="date" id="f-date" value="'+new Date().toISOString().split('T')[0]+'"></div>';
-  html+='<div class="form-field"><label>📈 Parts achetées</label><input type="number" id="f-parts" min="1" placeholder="8" oninput="previewForm()"></div>';
-  html+='<div class="form-field"><label>Prix/part (€)</label><input type="number" id="f-price" step="0.001" value="'+a.price.toFixed(3)+'" oninput="previewForm()"></div>';
+
+  // Toggle Achat / Vente
+  html+='<div style="display:flex;gap:6px;margin-bottom:12px;">';
+  html+='<button class="btn '+(opMode==='buy'?'btn-green':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setOpMode(\'buy\')">📈 Achat</button>';
+  html+='<button class="btn '+(opMode==='sell'?'btn-red':'btn-ghost')+'" style="flex:1;justify-content:center;" onclick="setOpMode(\'sell\')">📉 Vente</button>';
   html+='</div>';
-  html+='<div class="fp-row"><div>Coût de l\'achat: <strong id="fp-c">—</strong></div><div style="color:var(--blue)">Liquidités PEA après: <strong id="fp-r">—</strong></div></div>';
-  html+='<button class="btn btn-green btn-full" onclick="saveOp()">✓ Enregistrer l\'achat</button>';
-  html+='</div>';
-  // History
+
+  if(opMode==='buy'){
+    // ── FORMULAIRE ACHAT ──
+    html+='<div class="card"><div class="card-hd">Enregistrer un achat</div>';
+    html+='<div class="form-grid">';
+    html+='<div class="form-field" style="grid-column:1/-1;"><label>Date</label><input type="date" id="f-date" value="'+new Date().toISOString().split('T')[0]+'"></div>';
+    html+='<div class="form-field"><label>📈 Parts achetées</label><input type="number" id="f-parts" min="1" placeholder="8" oninput="previewForm()"></div>';
+    html+='<div class="form-field"><label>Prix/part (€)</label><input type="number" id="f-price" step="0.001" value="'+a.price.toFixed(3)+'" oninput="previewForm()"></div>';
+    html+='</div>';
+    html+='<div class="fp-row"><div>Coût de l\'achat: <strong id="fp-c">—</strong></div><div style="color:var(--blue)">Liquidités PEA après: <strong id="fp-r">—</strong></div></div>';
+    html+='<button class="btn btn-green btn-full" onclick="saveOp()">✓ Enregistrer l\'achat</button>';
+    html+='</div>';
+  } else {
+    // ── FORMULAIRE VENTE ──
+    var totParts=st.totP;
+    html+='<div class="card" style="border-color:var(--red)33;">';
+    html+='<div class="card-hd" style="color:var(--red);">📉 Enregistrer une vente</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-bottom:12px;">Tu possèdes actuellement <strong style="color:var(--text);">'+totParts+' parts</strong> de '+a.ticker.replace('.PA','')+'. La vente suit la méthode FIFO (les plus anciennes parts en premier).</div>';
+    html+='<div class="form-grid">';
+    html+='<div class="form-field" style="grid-column:1/-1;"><label>Date de vente</label><input type="date" id="f-date" value="'+new Date().toISOString().split('T')[0]+'"></div>';
+    html+='<div class="form-field"><label>📉 Parts vendues</label><input type="number" id="f-parts" min="1" max="'+totParts+'" placeholder="1" oninput="previewSell()"></div>';
+    html+='<div class="form-field"><label>Prix de vente/part (€)</label><input type="number" id="f-price" step="0.001" value="'+a.price.toFixed(3)+'" oninput="previewSell()"></div>';
+    html+='</div>';
+    html+='<div id="sell-preview" style="background:var(--s2);border-radius:var(--r3);padding:12px;margin-bottom:12px;display:none;">';
+    html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;">';
+    html+='<div><div style="color:var(--text3);">Montant encaissé</div><div style="font-weight:700;color:var(--text);" id="fp-total">—</div></div>';
+    html+='<div><div style="color:var(--text3);">Liquidités après</div><div style="font-weight:700;color:var(--blue);" id="fp-liq">—</div></div>';
+    html+='<div><div style="color:var(--text3);">Gain/Perte réalisé</div><div style="font-weight:700;" id="fp-gain">—</div></div>';
+    html+='<div><div style="color:var(--text3);">Parts restantes</div><div style="font-weight:700;color:var(--text);" id="fp-remain">—</div></div>';
+    html+='</div></div>';
+    html+='<button class="btn btn-full" style="background:var(--red);color:#fff;" onclick="saveSell()">✓ Enregistrer la vente</button>';
+    html+='</div>';
+  }
+
+  // Historique achats + ventes
   html+='<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--text3);margin-bottom:10px;">Historique des achats</div>';
   html+=renderHistory(a);
+  html+=renderSellHistory(a);
   return html;
 }
 
@@ -1660,6 +1702,25 @@ function renderHistory(a){
   return out;
 }
 
+function renderSellHistory(a){
+  // Filtrer les ventes de cet ETF depuis peaDepots
+  var ventes=peaDepots.filter(function(d){return d.type==='vente'&&d.ticker===a.ticker.replace('.PA','');});
+  if(ventes.length===0) return '';
+  var MNS=['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
+  var html='<div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--red);margin:16px 0 10px;">Historique des ventes</div>';
+  ventes.slice().sort(function(x,y){return y.date.localeCompare(x.date);}).forEach(function(v){
+    var ds=v.date.split('-');
+    var dlbl=parseInt(ds[2])+' '+MNS[parseInt(ds[1])-1]+' '+ds[0];
+    var gainCol=v.gain>=0?'var(--green)':'var(--red)';
+    html+='<div style="background:var(--s2);border-left:3px solid var(--red);border-radius:var(--r3);padding:10px 12px;margin-bottom:6px;">';
+    html+='<div style="font-size:10px;color:var(--red);font-weight:700;margin-bottom:4px;">📉 VENTE · '+dlbl+'</div>';
+    html+='<div style="font-family:JetBrains Mono,monospace;font-size:14px;font-weight:700;">'+v.parts+' parts × '+v.prixVente.toFixed(3)+'€</div>';
+    html+='<div style="font-size:11px;color:var(--text3);margin-top:2px;">Encaissé : '+fE(v.amount)+' · Gain réalisé : <span style="color:'+gainCol+';font-weight:700;">'+(v.gain>=0?'+':'')+fE(v.gain)+'</span></div>';
+    html+='</div>';
+  });
+  return html;
+}
+
 function toggleHistMore(){
   var more=document.getElementById('hist-more');
   var btn=document.getElementById('hist-toggle');
@@ -1697,6 +1758,80 @@ function saveOp(){
   saveAll();render();
   var ss=document.getElementById('save-status');
   if(ss)ss.textContent='✅ Achat enregistré · '+new Date().toLocaleTimeString('fr-FR');
+}
+
+// ── Vente : helpers ──
+function setOpMode(mode){
+  opMode=mode;
+  goTab(2,document.querySelector('.n2'));
+}
+
+function previewSell(){
+  var a=curAsset();if(!a)return;
+  var parts=parseInt(document.getElementById('f-parts').value)||0;
+  var prix=parseFloat(document.getElementById('f-price').value)||0;
+  var prev=document.getElementById('sell-preview');
+  if(!prev)return;
+  if(parts<=0||prix<=0){prev.style.display='none';return;}
+  prev.style.display='block';
+  var total=parts*prix;
+  var liqAfter=peaLiquidites()+total;
+  var remain=assetStats(a).totP-parts;
+  // Calcul gain FIFO : coût des parts vendues
+  var sortedDeps=a.deps.slice().sort(function(x,y){return x.date.localeCompare(y.date);});
+  var partsToSell=parts,coutFIFO=0;
+  for(var i=0;i<sortedDeps.length&&partsToSell>0;i++){
+    var taken=Math.min(sortedDeps[i].parts,partsToSell);
+    coutFIFO+=taken*sortedDeps[i].price;
+    partsToSell-=taken;
+  }
+  var gain=total-coutFIFO;
+  var gainCol=gain>=0?'var(--green)':'var(--red)';
+  function s(id,v){var e=document.getElementById(id);if(e)e.textContent=v;}
+  s('fp-total',fE(total));
+  s('fp-liq',fE(liqAfter));
+  var ge=document.getElementById('fp-gain');
+  if(ge){ge.textContent=(gain>=0?'+':'')+fE(gain);ge.style.color=gainCol;}
+  s('fp-remain',remain+' parts');
+}
+
+function saveSell(){
+  var a=curAsset();if(!a)return;
+  var date=document.getElementById('f-date').value;
+  var parts=parseInt(document.getElementById('f-parts').value);
+  var prix=parseFloat(document.getElementById('f-price').value);
+  if(!date){alert('Indique la date !');return;}
+  if(isNaN(parts)||parts<=0){alert('Indique le nombre de parts vendues !');return;}
+  if(isNaN(prix)||prix<=0){alert('Indique le prix de vente !');return;}
+  var totParts=assetStats(a).totP;
+  if(parts>totParts){alert('Tu ne peux pas vendre '+parts+' parts, tu n\'en as que '+totParts+' !');return;}
+
+  // Méthode FIFO : on retire les plus anciennes parts en premier
+  var sortedDeps=a.deps.slice().sort(function(x,y){return x.date.localeCompare(y.date);});
+  var partsToSell=parts,coutFIFO=0;
+  for(var i=0;i<sortedDeps.length&&partsToSell>0;i++){
+    var dep=sortedDeps[i];
+    var taken=Math.min(dep.parts,partsToSell);
+    coutFIFO+=taken*dep.price;
+    // Trouver ce dep dans a.deps et réduire
+    var orig=a.deps.find(function(d){return d.id===dep.id;});
+    if(orig){
+      orig.parts-=taken;
+      orig.amount=parseFloat((orig.parts*orig.price).toFixed(2));
+      if(orig.parts===0) a.deps=a.deps.filter(function(d){return d.id!==dep.id;});
+    }
+    partsToSell-=taken;
+  }
+
+  // Recréditer les liquidités : ajouter dans peaDepots comme un dépôt positif de vente
+  var montantVente=parseFloat((parts*prix).toFixed(2));
+  var gain=parseFloat((montantVente-coutFIFO).toFixed(2));
+  peaDepots.push({id:Date.now()+2,date:date,amount:montantVente,type:'vente',ticker:a.ticker.replace('.PA',''),parts:parts,prixVente:prix,gain:gain});
+
+  saveAll();
+  opMode='buy'; // Retour au mode achat
+  render();
+  alert('✅ Vente de '+parts+' parts enregistrée · '+fE(montantVente)+' recréditées · Gain réalisé : '+(gain>=0?'+':'')+fE(gain));
 }
 
 // ── Dépôts PEA globaux ──
@@ -2240,7 +2375,7 @@ function renderSettings(){
   html+='<div style="font-size:11px;color:var(--text2);line-height:1.5;">Ouvre cette page dans Chrome → Menu (⋮) → "Ajouter à l\'écran d\'accueil". Tu auras une vraie icône d\'appli en plein écran sans la barre du navigateur.</div>';
   html+='</div>';
 
-  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:16px;">HOME PEA v3.5.2</div>';
+  html+='<div style="font-size:11px;color:var(--text3);text-align:center;padding:16px;">HOME PEA v3.5.5</div>';
 
   return html;
 }
