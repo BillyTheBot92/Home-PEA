@@ -10,6 +10,7 @@
 <meta name="theme-color" content="#0c0c10">
 <link rel="stylesheet" href="fonts.css">
 <script src="chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -263,6 +264,7 @@ canvas{display:block;width:100%!important}
       <div class="tp-val" id="tp-val">—</div>
       <div class="tp-chg" id="tp-chg">—</div>
     </div>
+    <button class="icon-btn" onclick="showImportMenu()" title="Importer Excel/JSON">📥</button>
     <button class="icon-btn" id="refresh-btn" onclick="doRefresh()" title="Actualiser">↻</button>
     <button class="icon-btn" onclick="goTab(5,null)" title="Paramètres" style="margin-left:4px;">⚙️</button>
   </div>
@@ -362,6 +364,86 @@ var histData = {};
 var chartInsts = {};
 
 var COLORS = ['#4d9eff','#00e07a','#9d7dff','#ffb830','#ff4466','#00d4ff','#ff9f43','#a29bfe'];
+
+// ════════════════════════════════════════
+// IMPORT EXCEL/JSON
+// ════════════════════════════════════════
+function showImportMenu(){
+  var html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;" onclick="this.remove()"><div style="background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:20px;max-width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4);" onclick="event.stopPropagation()"><div style="font-size:14px;font-weight:700;margin-bottom:16px;color:var(--text);">📥 Importer données</div><div style="display:flex;flex-direction:column;gap:8px;"><label style="padding:12px;background:var(--s3);border:1px dashed var(--border);border-radius:8px;cursor:pointer;text-align:center;font-size:12px;font-weight:600;color:var(--text2);transition:all .2s;" onmouseover="this.style.borderColor=\'var(--green)\';this.style.color=\'var(--green)\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';">📊 Excel Saxo<input type="file" id="import-excel" accept=".xlsx,.xls" style="display:none;" onchange="importExcelFile(event)"></label><label style="padding:12px;background:var(--s3);border:1px dashed var(--border);border-radius:8px;cursor:pointer;text-align:center;font-size:12px;font-weight:600;color:var(--text2);transition:all .2s;" onmouseover="this.style.borderColor=\'var(--blue)\';this.style.color=\'var(--blue)\';" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text2)\';">📝 JSON<input type="file" id="import-json" accept=".json" style="display:none;" onchange="importJSONFile(event)"></label></div></div></div>';
+  document.body.insertAdjacentHTML('beforeend',html);
+}
+
+function importExcelFile(e){
+  var file=e.target.files[0];if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var wb=XLSX.read(ev.target.result,{type:'binary'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var data=XLSX.utils.sheet_to_json(ws);
+      var result=convertSaxoToV3(data);
+      if(confirm('Importer '+result.assets.length+' actifs et '+result.depots.length+' dépôts ? Cela remplace tout.')){
+        assets=result.assets;
+        peaDepots=result.depots;
+        saveAll();
+        Promise.all(assets.map(fetchAssetPrice)).then(function(){buildAssetTabs();render();});
+        alert('✅ Excel importé !');
+        document.querySelectorAll('[style*="position:fixed"]').forEach(function(el){el.remove();});
+      }
+    }catch(err){alert('❌ Erreur: '+err.message);}
+  };
+  reader.readAsBinaryString(file);
+}
+
+function importJSONFile(e){
+  var file=e.target.files[0];if(!file)return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var data=JSON.parse(ev.target.result);
+      if(!data.assets||!Array.isArray(data.assets)){alert('Format JSON invalide');return;}
+      if(confirm('Importer '+data.assets.length+' actifs ? Cela remplace tout.')){
+        assets=data.assets;
+        if(data.depots)peaDepots=data.depots;
+        saveAll();
+        Promise.all(assets.map(fetchAssetPrice)).then(function(){buildAssetTabs();render();});
+        alert('✅ JSON importé !');
+        document.querySelectorAll('[style*="position:fixed"]').forEach(function(el){el.remove();});
+      }
+    }catch(err){alert('❌ Erreur JSON: '+err.message);}
+  };
+  reader.readAsText(file);
+}
+
+function convertSaxoToV3(rows){
+  var assetMap={};var depots=[];var idCounter=0;
+  rows.forEach(function(row){
+    var date=row['Date d\'opération']||'';
+    var event=row['Événement']||'';
+    var symbol=(row['Symbole']||'').split(':')[0];
+    var instrument=row['Instrument']||'';
+    var montant=parseFloat(row['Montant comptabilisé'])||0;
+    var cout=parseFloat(row['Coût total'])||0;
+    if(!date||!symbol)return;
+    // Parse "Acheter 15 @ 5.08 EUR" ou "Vendre -1 @ 76.63 EUR"
+    var match=event.match(/(Acheter|Vendre)\s+(-?\d+\.?\d*)\s*@\s*([\d,\.]+)/);
+    if(!match)return;
+    var isAcheter=match[1]==='Acheter';var qty=Math.abs(parseFloat(match[2]));var prix=parseFloat(match[3].replace(',','.'));
+    var dateStr=date instanceof Date?date.toISOString().split('T')[0]:(typeof date==='number'?new Date((date-25569)*86400*1000).toISOString().split('T')[0]:date.split('T')[0]);
+    if(!assetMap[symbol]){assetMap[symbol]={id:symbol.toLowerCase(),ticker:symbol+'.PA',name:instrument,color:COLORS[Object.keys(assetMap).length%COLORS.length],price:0,prev:0,loaded:false,alerts:{high:null,low:null},deps:[]};}
+    if(isAcheter){var cost=(qty*prix)+Math.abs(cout);assetMap[symbol].deps.push({date:dateStr,parts:qty,price:prix,amount:cost});}else{assetMap[symbol].deps.push({date:dateStr,parts:-qty,price:prix,amount:-(qty*prix)});}
+    if(montant>0){var alreadyExists=depots.find(function(d){return d.date===dateStr;});if(!alreadyExists){depots.push({id:Date.now()+(idCounter++),date:dateStr,amount:montant});}}
+  });
+  // Recalculer les parts nettes pour les ventes
+  Object.keys(assetMap).forEach(function(symbol){
+    var deps=assetMap[symbol].deps;var netParts=0;
+    deps.forEach(function(d){netParts+=d.parts;});
+    if(netParts<=0){delete assetMap[symbol];}
+  });
+  depots.sort(function(a,b){return b.date.localeCompare(a.date);});
+  var assets=Object.values(assetMap);
+  return{v:'pea-v3',date:new Date().toISOString(),assets:assets,depots:depots};
+}
 
 // ════════════════════════════════════════
 // PERSISTENCE
