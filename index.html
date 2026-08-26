@@ -2422,9 +2422,9 @@ function renderSettings(){
 
   // Sauvegarde
   html+='<div class="card"><div class="card-hd">💾 Sauvegarde des données</div>';
-  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Tes données sont dans le navigateur. Exporte régulièrement pour ne pas les perdre.</div>';
+  html+='<div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Tes données sont sauvegardées automatiquement. Utilise Restaurer pour importer des données.</div>';
   html+='<div style="display:flex;gap:8px;flex-wrap:wrap;">';
-  html+='<button class="btn btn-blue" onclick="exportAll()">💾 Exporter tout</button>';
+  html+='<!-- Bouton export supprimé (utiliser Restaurer dans paramètres) -->';
   html+='<button class="btn btn-ghost" onclick="document.getElementById(\'imp-file-set\').click()">📂 Restaurer</button>';
   html+='<input type="file" id="imp-file-set" accept=".json" style="display:none" onchange="importAll(event)">';
   html+='</div>';
